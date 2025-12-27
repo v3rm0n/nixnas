@@ -32,10 +32,10 @@
             };
 
             environment.systemPackages = with pkgs; [
-              neovim,
-              git,
-              rsync,
-              wget,
+              neovim
+              git
+              rsync
+              wget
               curl
             ];
           })
