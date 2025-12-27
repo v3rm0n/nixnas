@@ -1,12 +1,5 @@
 { config, pkgs, lib, ... }:
 
-let
-  arion = pkgs.arion.build {
-    modules = [ ./arion-compose.nix ];
-    pkgs = import ./arion-pkgs.nix;
-  };
-in
-
 {
   imports = [ ];
 
@@ -16,6 +9,7 @@ in
 
   # Networking
   networking.hostName = "nixnas";
+  networking.hostId = "8425e349";  # Required for ZFS
   networking.networkmanager.enable = true;
 
   # Time zone
@@ -156,19 +150,11 @@ in
     };
   };
 
-  # Systemd service to manage Arion containers
-  systemd.services.arion-nixnas = {
-    wantedBy = [ "multi-user.target" ];
-    after = [ "docker.service" ];
-    requires = [ "docker.service" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = "${arion}/bin/arion up -d";
-      ExecStop = "${arion}/bin/arion down";
-      WorkingDirectory = "/var/lib/arion/nixnas";
-    };
-  };
+  # Arion configuration for Docker Compose management
+  # The arion-compose.nix file defines the containers
+  # After deployment, run: arion up -d
+  environment.etc."arion/nixnas/arion-compose.nix".source = ./arion-compose.nix;
+  environment.etc."arion/nixnas/arion-pkgs.nix".source = ./arion-pkgs.nix;
 
   # Firewall configuration
   networking.firewall = {
