@@ -1,4 +1,11 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
+
+let
+  arion = pkgs.arion.build {
+    modules = [ ./arion-compose.nix ];
+    pkgs = import ./arion-pkgs.nix;
+  };
+in
 
 {
   imports = [ ];
@@ -69,6 +76,14 @@
         "hosts deny" = "0.0.0.0/0";
         "guest account" = "nobody";
         "map to guest" = "bad user";
+        # Time Machine support
+        "vfs objects" = "catia fruit streams_xattr";
+        "fruit:metadata" = "stream";
+        "fruit:model" = "MacSamba";
+        "fruit:posix_rename" = "yes";
+        "fruit:veto_appledouble" = "no";
+        "fruit:wipe_intentionally_left_blank_rfork" = "yes";
+        "fruit:delete_empty_adfiles" = "yes";
       };
       tank = {
         "path" = "/tank";
@@ -78,6 +93,80 @@
         "create mask" = "0644";
         "directory mask" = "0755";
       };
+      # Time Machine backup share
+      timemachine = {
+        "path" = "/tank/timemachine";
+        "browseable" = "yes";
+        "read only" = "no";
+        "guest ok" = "no";
+        "create mask" = "0600";
+        "directory mask" = "0700";
+        "fruit:time machine" = "yes";
+        "fruit:time machine max size" = "500G";
+      };
+    };
+  };
+
+  # Avahi/mDNS for Time Machine discovery
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    publish = {
+      enable = true;
+      addresses = true;
+      domain = true;
+      hinfo = true;
+      userServices = true;
+      workstation = true;
+    };
+    extraServiceFiles = {
+      smb = ''
+        <?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+        <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+        <service-group>
+          <name replace-wildcards="yes">%h</name>
+          <service>
+            <type>_smb._tcp</type>
+            <port>445</port>
+          </service>
+          <service>
+            <type>_device-info._tcp</type>
+            <port>9</port>
+            <txt-record>model=TimeCapsule8,119</txt-record>
+          </service>
+          <service>
+            <type>_adisk._tcp</type>
+            <port>9</port>
+            <txt-record>dk0=adVN=timemachine,adVF=0x82</txt-record>
+            <txt-record>sys=waMA=0,adVF=0x100</txt-record>
+          </service>
+        </service-group>
+      '';
+    };
+  };
+
+  # Docker configuration
+  virtualisation.docker = {
+    enable = true;
+    enableOnBoot = true;
+    storageDriver = "overlay2";
+    # Use ZFS dataset for Docker data
+    daemon.settings = {
+      data-root = "/tank/docker";
+    };
+  };
+
+  # Systemd service to manage Arion containers
+  systemd.services.arion-nixnas = {
+    wantedBy = [ "multi-user.target" ];
+    after = [ "docker.service" ];
+    requires = [ "docker.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${arion}/bin/arion up -d";
+      ExecStop = "${arion}/bin/arion down";
+      WorkingDirectory = "/var/lib/arion/nixnas";
     };
   };
 
@@ -89,16 +178,21 @@
       2049  # NFS
       139   # Samba
       445   # Samba
+      5353  # Avahi/mDNS
+      8096  # Jellyfin HTTP
+      8920  # Jellyfin HTTPS
+      2283  # Immich
     ];
     allowedUDPPorts = [
       137   # Samba
       138   # Samba
+      5353  # Avahi/mDNS
     ];
   };
 
   # System packages
   environment.systemPackages = with pkgs; [
-    vim
+    neovim
     git
     htop
     tmux
@@ -108,6 +202,8 @@
     zfs
     smartmontools  # Drive health monitoring
     lm_sensors     # Hardware sensors
+    docker-compose # Docker Compose CLI
+    arion          # Declarative Docker Compose
   ];
 
   # Enable smartd for drive monitoring
@@ -117,13 +213,12 @@
   };
 
   # Users configuration
-  users.users.admin = {
+  users.users.maidok = {
     isNormalUser = true;
     description = "NAS Administrator";
-    extraGroups = [ "wheel" "networkmanager" ];
+    extraGroups = [ "wheel" "networkmanager" "docker" ];
     openssh.authorizedKeys.keys = [
-      # Add your SSH public key here
-      # "ssh-ed25519 AAAAC3... user@host"
+      "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBDW1VjVj96qNdJwJ5DrQUpTO760STvWDiFpnx6lkYzBowlGEW/xss2yGCPO77TfP31Y87X9OTSmon4Vz6UqopbU= maidok@maibook"
     ];
   };
 

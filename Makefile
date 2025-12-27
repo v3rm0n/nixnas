@@ -1,4 +1,8 @@
-.PHONY: iso clean-iso clean-cache
+.PHONY: iso clean-iso clean-cache hardware-config
+
+# Variables
+NAS_HOST ?= nixnas
+NAS_USER ?= root
 
 iso:
 	docker run --rm -it \
@@ -15,3 +19,9 @@ clean-iso:
 
 clean-cache:
 	docker volume rm nixnas-nix-store
+
+hardware-config:
+	nix run github:nix-community/nixos-anywhere -- --flake '.#nixnas' --generate-hardware-config nixos-facter ./facter.json --target-host $(NAS_USER)@$(NAS_HOST)
+
+install:
+	nix run github:nix-community/nixos-anywhere -- --flake '.#nixnas' --target-host $(NAS_USER)@$(NAS_HOST)
